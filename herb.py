@@ -7,7 +7,7 @@ import json
 # ---------------------------
 # Sensors
 # ---------------------------
-sensors = ["Voltammetric Sensor", "Biosensor", "Photochemical Sensor", "pH Sensor"]
+sensors = ["Voltammetric Sensor", "Conductivity Sensor", "Photochemical Sensor", "pH Sensor"]
 
 # ---------------------------
 # Initialize universal dataset
@@ -16,7 +16,7 @@ if not os.path.exists("universal_dataset.csv"):
     universal_df = pd.DataFrame({
         "Herb": ["Tulsi", "Basil", "Mint", "Oregano", "Thyme"],
         "Voltammetric Sensor": [0.2, 0.5, 0.8, 0.3, 0.6],
-        "Biosensor": [0.7, 0.4, 0.9, 0.2, 0.5],
+    "Conductivity Sensor": [0.7, 0.4, 0.9, 0.2, 0.5],
         "Photochemical Sensor": [0.3, 0.6, 0.2, 0.7, 0.4],
         "pH Sensor": [0.5, 0.1, 0.8, 0.4, 0.6]
     })
@@ -53,7 +53,7 @@ if "username" not in st.session_state:
 # ---------------------------
 users = {"admin": "admin123", "user1": "user123", "user2": "user234"}
 
-st.title("🌿 E-Tongue Herb Fingerprint Management System")
+st.title("🌿 E-Tongue for Dravya Detection System")
 
 # ---------------------------
 # Login
@@ -74,180 +74,115 @@ if not st.session_state.logged_in:
 # Main app after login
 # ---------------------------
 if st.session_state.logged_in:
-    username = st.session_state.username
-    user_type = "Admin" if username == "admin" else "User"
-    st.subheader(f"Welcome {username} ({user_type})")
-
-    # Load personal dataset
-    personal_file = f"{username}_personal.csv"
+    # Load personal dataset for the logged-in user
+    personal_file = f"{st.session_state.username}_personal.csv"
     if os.path.exists(personal_file):
         personal_df = pd.read_csv(personal_file)
     else:
         personal_df = pd.DataFrame(columns=["Herb"] + sensors)
+    username = st.session_state.username
+    user_type = "Admin" if username == "admin" else "User"
+    # Show reference dataset (Universal + Personal) immediately after login
+    st.write("### Reference Dataset (Universal + Personal)")
+    reference_df = pd.concat([universal_df, personal_df], ignore_index=True)
+    reference_df.index = np.arange(1, len(reference_df)+1)
+    st.table(reference_df)
 
-    # ---------------------------
-    # Admin Interface
-    # ---------------------------
+    # Show main options for both admin and user
     if user_type == "Admin":
-        st.write("### Universal Herb Dataset")
-        display_universal = universal_df.copy()
-        display_universal.index = np.arange(1, len(display_universal)+1)  # S.No starts from 1
-        st.table(display_universal)
-
-        # Add new herb to Universal dataset
-        st.write("### Add New Herb to Universal Dataset")
-        with st.form("add_herb_form"):
-            new_herb = st.text_input("Herb Name")
-            new_sensor_values = []
-            for sensor in sensors:
-                value = st.number_input(f"{sensor} value", min_value=0.0, max_value=1.0, step=0.01, format="%.2f")
-                new_sensor_values.append(value)
-            submitted = st.form_submit_button("Add Herb")
-            if submitted and new_herb:
-                if new_herb in universal_df["Herb"].values:
-                    st.warning(f"Herb '{new_herb}' already exists in the universal dataset.")
-                else:
-                    new_row = pd.DataFrame({
-                        "Herb": [new_herb],
-                        sensors[0]: [new_sensor_values[0]],
-                        sensors[1]: [new_sensor_values[1]],
-                        sensors[2]: [new_sensor_values[2]],
-                        sensors[3]: [new_sensor_values[3]]
-                    })
-                    universal_df = pd.concat([universal_df, new_row], ignore_index=True)
-                    universal_df.to_csv("universal_dataset.csv", index=False)
-                    st.success(f"✅ Added {new_herb} to Universal Dataset")
-                    st.rerun()
-
-        # Remove herb from Universal dataset
-        if not universal_df.empty:
-            remove_herb = st.selectbox("Select Herb to Remove (Universal)", universal_df["Herb"])
-            if st.button("Remove Selected Herb (Universal)"):
-                universal_df = universal_df[universal_df["Herb"] != remove_herb]
-                universal_df.to_csv("universal_dataset.csv", index=False)
-                st.success(f"✅ Removed {remove_herb} from Universal Dataset")
-                st.rerun()
-
-        # Pending requests
-        st.write("### Pending User Requests (Universal)")
-        for i, req in enumerate(st.session_state.pending_requests):
-            if req["type"] == "Universal":
-                st.write(f"Request #{i+1} by {req['username']} to add **{req['herb']}** - Properties: {req['properties']}")
-                if st.button(f"Approve #{i+1}", key=f"approve_{i}"):
-                    new_row = pd.DataFrame({
-                        "Herb": [req['herb']],
-                        sensors[0]: [req['properties'][0]],
-                        sensors[1]: [req['properties'][1]],
-                        sensors[2]: [req['properties'][2]],
-                        sensors[3]: [req['properties'][3]]
-                    })
-                    universal_df = pd.concat([universal_df, new_row], ignore_index=True)
-                    universal_df.to_csv("universal_dataset.csv", index=False)
-                    st.session_state.pending_requests.pop(i)
-                    save_pending_requests(st.session_state.pending_requests)
-                    st.rerun()
-                if st.button(f"Reject #{i+1}", key=f"reject_{i}"):
-                    st.session_state.pending_requests.pop(i)
-                    save_pending_requests(st.session_state.pending_requests)
-                    st.rerun()
-
-    # ---------------------------
-    # User Interface
-    # ---------------------------
+        action = st.selectbox("Choose action:", ["Match Fingerprint", "Check Adulteration", "Submit New Herb", "Remove Universal Herb"])
     else:
         action = st.selectbox("Choose action:", ["Match Fingerprint", "Check Adulteration", "Submit New Herb", "Remove Personal Herb"])
 
-        # Show dataset to user
-        st.write("### Your Dataset for Reference (Universal + Personal)")
-        combined_df = pd.concat([universal_df, personal_df], ignore_index=True)
-        display_combined = combined_df.copy()
-        display_combined.index = np.arange(1, len(display_combined)+1)
-        st.table(display_combined)
+    # Percentage Match Function (used by both flows)
+    def get_match(df, props):
+        max_distance = np.sqrt(len(props))
+        df = df.copy()
+        df["distance"] = np.sqrt(np.sum([(df[sensors[i]] - props[i])**2 for i in range(len(props))], axis=0))
+        df["percent_match"] = 100 * (1 - df["distance"]/max_distance)
+        best = df.loc[df["percent_match"].idxmax()]
+        return best
 
-        # Percentage Match Function
-        def get_match(df, props):
-            max_distance = np.sqrt(len(props))
-            df = df.copy()
-            df["distance"] = np.sqrt(np.sum([(df[sensors[i]] - props[i])**2 for i in range(len(props))], axis=0))
-            df["percent_match"] = 100 * (1 - df["distance"]/max_distance)
-            best = df.loc[df["percent_match"].idxmax()]
-            return best
+    combined_df = pd.concat([universal_df, personal_df], ignore_index=True)
 
-        # ---------------------------
-        # Match Fingerprint
-        # ---------------------------
-        if action == "Match Fingerprint":
-            st.write("### Enter Herb Sensor Values")
-            p = [st.number_input(f"{sensors[i]} value", min_value=0.0, max_value=1.0, step=0.01, key=f"match_p{i}") for i in range(4)]
-            
-            if st.button("Find Match"):
-                best = get_match(combined_df, p)
-                if best["percent_match"] >= 85:
-                    st.success(f"✅ Match Found: **{best['Herb']}** ({best['percent_match']:.2f}%)")
-                else:
-                    st.warning(f"⚠️ No sufficient match. Closest: **{best['Herb']}** ({best['percent_match']:.2f}%)")
-
-        # ---------------------------
-        # Check Adulteration
-        # ---------------------------
-        elif action == "Check Adulteration":
-            st.write("### Check Adulteration")
-            herb_name = st.text_input("Enter Herb Name").title()
-            p = [st.number_input(f"{sensors[i]} value", min_value=0.0, max_value=1.0, step=0.01, key=f"adul_p{i}") for i in range(4)]
-            if st.button("Check"):
-                if herb_name in combined_df["Herb"].values:
-                    herb_row = combined_df[combined_df["Herb"] == herb_name].iloc[0]
-                    distance = np.sqrt(sum([(herb_row[sensors[i]] - p[i])**2 for i in range(4)]))
-                    percent_match = 100 * (1 - distance/np.sqrt(4))
-                    if percent_match >= 85:
-                        st.success(f"✅ No Adulteration Detected ({percent_match:.2f}%)")
+    # For all actions except Remove Herb, prompt for Enable E-tongue
+    if action != ("Remove Universal Herb" if user_type == "Admin" else "Remove Personal Herb"):
+        enable_etongue = st.checkbox("Enable E-tongue?", key="enable_etongue_action")
+        if not enable_etongue:
+            st.info("Please enable E-tongue to proceed.")
+        else:
+            if action == "Match Fingerprint":
+                st.write("### E-tongue sensor values")
+                p = [st.number_input(f"{sensors[i]} value", min_value=0.0, max_value=1.0, step=0.01, key=f"match_p{i}") for i in range(4)]
+                if st.button("Find Match"):
+                    best = get_match(combined_df, p)
+                    if best["percent_match"] >= 85:
+                        st.success(f"✅ Match Found: **{best['Herb']}** ({best['percent_match']:.2f}%)")
                     else:
-                        st.error(f"⚠️ Adulteration Detected! Closest match percentage: {percent_match:.2f}%")
-                else:
-                    st.error("Herb not found.")
-
-        # ---------------------------
-        # Submit New Herb
-        # ---------------------------
-        elif action == "Submit New Herb":
-            st.write("### Submit New Herb")
-            new_herb = st.text_input("Herb Name").title()
-            props = [st.number_input(f"{sensors[i]} value", min_value=0.0, max_value=1.0, step=0.01, key=f"new_p{i}") for i in range(4)]
-            update_type = st.radio("Update Type", ["Universal", "Personal"])
-
-            if st.button("Submit Herb"):
-                if new_herb:
-                    if update_type == "Personal":
-                        new_row = pd.DataFrame({
-                            "Herb": [new_herb],
-                            sensors[0]: [props[0]],
-                            sensors[1]: [props[1]],
-                            sensors[2]: [props[2]],
-                            sensors[3]: [props[3]]
-                        })
-                        personal_df = pd.concat([personal_df, new_row], ignore_index=True)
-                        personal_df.to_csv(personal_file, index=False)
-                        st.success("✅ Added to your personal dataset!")
+                        st.warning(f"⚠️ No sufficient match. Closest: **{best['Herb']}** ({best['percent_match']:.2f}%)")
+            elif action == "Check Adulteration":
+                st.write("### Check Adulteration")
+                herb_name = st.text_input("Enter Herb Name").title()
+                p = [st.number_input(f"{sensors[i]} value", min_value=0.0, max_value=1.0, step=0.01, key=f"adul_p{i}") for i in range(4)]
+                if st.button("Check"):
+                    if herb_name in combined_df["Herb"].values:
+                        herb_row = combined_df[combined_df["Herb"] == herb_name].iloc[0]
+                        distance = np.sqrt(sum([(herb_row[sensors[i]] - p[i])**2 for i in range(4)]))
+                        percent_match = 100 * (1 - distance/np.sqrt(4))
+                        if percent_match >= 85:
+                            st.success(f"✅ No Adulteration Detected ({percent_match:.2f}%)")
+                        else:
+                            st.error(f"⚠️ Adulteration Detected! Closest match percentage: {percent_match:.2f}%")
                     else:
-                        # Universal request goes to admin
-                        st.session_state.pending_requests.append({
-                            "username": username,
-                            "herb": new_herb,
-                            "properties": props,
-                            "type": "Universal"
-                        })
-                        save_pending_requests(st.session_state.pending_requests)
-                        st.info("📨 Request submitted to admin for approval.")
-
-        # ---------------------------
-        # Remove Personal Herb
-        # ---------------------------
-        elif action == "Remove Personal Herb":
+                        st.error("Herb not found.")
+            elif action == "Submit New Herb":
+                st.write("### Submit New Herb")
+                new_herb = st.text_input("Herb Name").title()
+                props = [st.number_input(f"{sensors[i]} value", min_value=0.0, max_value=1.0, step=0.01, key=f"new_p{i}") for i in range(4)]
+                update_type = st.radio("Update Type", ["Universal", "Personal"])
+                if st.button("Submit Herb"):
+                    if new_herb:
+                        if update_type == "Personal":
+                            new_row = pd.DataFrame({
+                                "Herb": [new_herb],
+                                sensors[0]: [props[0]],
+                                sensors[1]: [props[1]],
+                                sensors[2]: [props[2]],
+                                sensors[3]: [props[3]]
+                            })
+                            personal_df = pd.concat([personal_df, new_row], ignore_index=True)
+                            personal_df.to_csv(personal_file, index=False)
+                            st.success("✅ Added to your personal dataset!")
+                        else:
+                            # Universal request goes to admin
+                            st.session_state.pending_requests.append({
+                                "username": username,
+                                "herb": new_herb,
+                                "properties": props,
+                                "type": "Universal"
+                            })
+                            save_pending_requests(st.session_state.pending_requests)
+                            st.info("📨 Request submitted to admin for approval.")
+    else:
+        # Remove Universal Herb for admin, Remove Personal Herb for user
+        if user_type == "Admin":
+            st.write("### Remove a Herb from Universal Dataset")
+            if not universal_df.empty:
+                remove_herb_universal = st.selectbox("Select Herb to Remove", universal_df["Herb"], key="remove_herb_universal_select")
+                if st.button("Remove Selected Herb (Universal)", key="remove_herb_universal_btn"):
+                    universal_df = universal_df[universal_df["Herb"] != remove_herb_universal]
+                    universal_df.to_csv("universal_dataset.csv", index=False)
+                    st.success(f"✅ Removed {remove_herb_universal} from Universal Dataset")
+                    st.rerun()
+        else:
             st.write("### Remove a Herb from Your Personal Dataset")
             if not personal_df.empty:
-                remove_herb_personal = st.selectbox("Select Herb to Remove", personal_df["Herb"])
-                if st.button("Remove Selected Herb (Personal)"):
+                remove_herb_personal = st.selectbox("Select Herb to Remove", personal_df["Herb"], key="remove_herb_personal_select")
+                if st.button("Remove Selected Herb (Personal)", key="remove_herb_personal_btn"):
                     personal_df = personal_df[personal_df["Herb"] != remove_herb_personal]
                     personal_df.to_csv(personal_file, index=False)
                     st.success(f"✅ Removed {remove_herb_personal} from Personal Dataset")
                     st.rerun()
+            else:
+                st.info("Personal herb dataset is empty")
+
